@@ -26,6 +26,58 @@ except ImportError:
 
 
 # =============================================================================
+# SERVICIO: VALIDACIONES
+# =============================================================================
+
+import re
+
+
+def validar_correo_electronico(correo: str) -> bool:
+    """
+    Valida formato de correo electrónico.
+    
+    Args:
+        correo: Dirección de correo electrónico
+    
+    Returns:
+        bool: True si el formato es válido
+    """
+    if not correo or not isinstance(correo, str):
+        return False
+    
+    # Patrón básico de correo electrónico
+    patron = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(patron, correo.strip()) is not None
+
+
+def validar_telefono_ecuador(telefono: str) -> bool:
+    """
+    Valida formato de teléfono Ecuador (fijo o celular).
+    
+    Args:
+        telefono: Número de teléfono
+    
+    Returns:
+        bool: True si el formato es válido
+    """
+    if not telefono:
+        return False
+    
+    # Limpiar número
+    telefono_limpio = telefono.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    
+    # Celular: 09X XXX XXXX (10 dígitos, empieza con 09)
+    # Fijo: 02 XXX XXXX (9 dígitos, empieza con 0)
+    if telefono_limpio.isdigit():
+        if len(telefono_limpio) == 10 and telefono_limpio.startswith("09"):
+            return True  # Celular
+        if len(telefono_limpio) == 9 and telefono_limpio.startswith("0"):
+            return True  # Fijo
+    
+    return False
+
+
+# =============================================================================
 # SERVICIO: ESTUDIANTES
 # =============================================================================
 
@@ -658,6 +710,422 @@ def generar_certificado(
         }
     except Exception as e:
         return {"exito": False, "error": f"Error al generar certificado: {str(e)}"}
+
+
+# =============================================================================
+# SERVICIO: DOCENTES
+# =============================================================================
+
+def registrar_docente(
+    nombres_completos: str,
+    celular: str,
+    correo_electronico: str,
+    telefono: str = None,
+    especializacion: str = None,
+    db_path: str = DB_PATH
+) -> Dict:
+    """
+    Registra un nuevo docente/facilitador en el sistema.
+    """
+    from models.database import ejecutar_modificacion, ejecutar_consulta
+    
+    # Verificar correo único
+    existente = ejecutar_consulta(
+        "SELECT id_docente FROM docentes WHERE correo_electronico = ?",
+        (correo_electronico,)
+    )
+    if existente:
+        return {
+            "exito": False,
+            "error": "Ya existe un docente registrado con este correo."
+        }
+    
+    query = """
+        INSERT INTO docentes (nombres_completos, telefono, celular, correo_electronico, especializacion)
+        VALUES (?, ?, ?, ?, ?)
+    """
+    
+    try:
+        id_docente = ejecutar_modificacion(
+            query,
+            (nombres_completos, telefono, celular, correo_electronico, especializacion)
+        )
+        return {
+            "exito": True,
+            "id_docente": id_docente,
+            "mensaje": "Docente registrado exitosamente."
+        }
+    except Exception as e:
+        return {"exito": False, "error": f"Error al registrar docente: {str(e)}"}
+
+
+def listar_docentes(estado: str = None, db_path: str = DB_PATH) -> List[Dict]:
+    """Lista todos los docentes."""
+    from models.database import ejecutar_consulta
+    
+    if estado:
+        return ejecutar_consulta(
+            "SELECT * FROM docentes WHERE estado = ? ORDER BY nombres_completos",
+            (estado,)
+        )
+    return ejecutar_consulta(
+        "SELECT * FROM docentes ORDER BY nombres_completos"
+    )
+
+
+def obtener_docente_por_id(id_docente: int, db_path: str = DB_PATH) -> Optional[Dict]:
+    """Obtiene un docente por su ID."""
+    from models.database import ejecutar_consulta
+    
+    resultados = ejecutar_consulta(
+        "SELECT * FROM docentes WHERE id_docente = ?",
+        (id_docente,)
+    )
+    return resultados[0] if resultados else None
+
+
+def actualizar_docente(
+    id_docente: int,
+    nombres_completos: str = None,
+    telefono: str = None,
+    celular: str = None,
+    correo_electronico: str = None,
+    especializacion: str = None,
+    estado: str = None,
+    db_path: str = DB_PATH
+) -> Dict:
+    """Actualiza un docente."""
+    from models.database import ejecutar_modificacion
+    
+    campos = []
+    valores = []
+    
+    if nombres_completos:
+        campos.append("nombres_completos = ?")
+        valores.append(nombres_completos)
+    if telefono is not None:
+        campos.append("telefono = ?")
+        valores.append(telefono)
+    if celular:
+        campos.append("celular = ?")
+        valores.append(celular)
+    if correo_electronico:
+        campos.append("correo_electronico = ?")
+        valores.append(correo_electronico)
+    if especializacion is not None:
+        campos.append("especializacion = ?")
+        valores.append(especializacion)
+    if estado:
+        campos.append("estado = ?")
+        valores.append(estado)
+    
+    if not campos:
+        return {"exito": False, "error": "No hay campos para actualizar"}
+    
+    valores.append(id_docente)
+    
+    query = f"UPDATE docentes SET {', '.join(campos)} WHERE id_docente = ?"
+    
+    try:
+        ejecutar_modificacion(query, tuple(valores))
+        return {"exito": True, "mensaje": "Docente actualizado exitosamente"}
+    except Exception as e:
+        return {"exito": False, "error": f"Error al actualizar docente: {str(e)}"}
+
+
+def eliminar_docente(id_docente: int, db_path: str = DB_PATH) -> Dict:
+    """Elimina (desactiva) un docente."""
+    return actualizar_docente(id_docente, estado="inactivo")
+
+
+# =============================================================================
+# SERVICIO: INSCRIPCIONES
+# =============================================================================
+
+def listar_inscripciones(
+    estado: str = None,
+    id_curso: int = None,
+    db_path: str = DB_PATH
+) -> List[Dict]:
+    """Lista las inscripciones."""
+    from models.database import ejecutar_consulta
+    
+    query = """
+        SELECT i.*, e.nombres_completos as nombre_estudiante, 
+               e.identificacion, c.nombre as nombre_curso, c.codigo
+        FROM inscripciones i
+        JOIN estudiantes e ON i.id_estudiante = e.id_estudiante
+        JOIN cursos c ON i.id_curso = c.id_curso
+    """
+    
+    condiciones = []
+    params = []
+    
+    if estado:
+        condiciones.append("i.estado = ?")
+        params.append(estado)
+    if id_curso:
+        condiciones.append("i.id_curso = ?")
+        params.append(id_curso)
+    
+    if condiciones:
+        query += " WHERE " + " AND ".join(condiciones)
+    
+    query += " ORDER BY i.fecha_inscripcion DESC"
+    
+    return ejecutar_consulta(query, tuple(params))
+
+
+def obtener_inscripcion_por_id(id_inscripcion: int, db_path: str = DB_PATH) -> Optional[Dict]:
+    """Obtiene una inscripción por su ID."""
+    from models.database import ejecutar_consulta
+    
+    resultados = ejecutar_consulta(
+        "SELECT * FROM inscripciones WHERE id_inscripcion = ?",
+        (id_inscripcion,)
+    )
+    return resultados[0] if resultados else None
+
+
+def actualizar_inscripcion(
+    id_inscripcion: int,
+    tiene_pdf_cedula: bool = None,
+    tiene_pago: bool = None,
+    estado: str = None,
+    calificacion: float = None,
+    estado_certificacion: str = None,
+    db_path: str = DB_PATH
+) -> Dict:
+    """Actualiza una inscripción."""
+    from models.database import ejecutar_modificacion
+    
+    campos = []
+    valores = []
+    
+    if tiene_pdf_cedula is not None:
+        campos.append("tiene_pdf_cedula = ?")
+        valores.append(tiene_pdf_cedula)
+    if tiene_pago is not None:
+        campos.append("tiene_pago = ?")
+        valores.append(tiene_pago)
+    if estado:
+        campos.append("estado = ?")
+        valores.append(estado)
+    if calificacion is not None:
+        campos.append("calificacion = ?")
+        valores.append(calificacion)
+    if estado_certificacion:
+        campos.append("estado_certificacion = ?")
+        valores.append(estado_certificacion)
+    
+    if not campos:
+        return {"exito": False, "error": "No hay campos para actualizar"}
+    
+    valores.append(id_inscripcion)
+    
+    query = f"UPDATE inscripciones SET {', '.join(campos)} WHERE id_inscripcion = ?"
+    
+    try:
+        ejecutar_modificacion(query, tuple(valores))
+        return {"exito": True, "mensaje": "Inscripción actualizada"}
+    except Exception as e:
+        return {"exito": False, "error": f"Error: {str(e)}"}
+
+
+# =============================================================================
+# SERVICIO: CERTIFICACIONES
+# =============================================================================
+
+def listar_certificaciones(
+    estado: str = None,
+    db_path: str = DB_PATH
+) -> List[Dict]:
+    """Lista las certificaciones."""
+    from models.database import ejecutar_consulta
+    
+    query = """
+        SELECT cert.*, e.nombres_completos as nombre_estudiante,
+               e.identificacion, c.nombre as nombre_curso,
+               i.calificacion, i.estado_certificacion
+        FROM certificaciones cert
+        JOIN inscripciones i ON cert.id_inscripcion = i.id_inscripcion
+        JOIN estudiantes e ON i.id_estudiante = e.id_estudiante
+        JOIN cursos c ON i.id_curso = c.id_curso
+    """
+    
+    if estado:
+        query += " WHERE cert.estado = ?"
+        query += " ORDER BY cert.fecha_emision DESC"
+        return ejecutar_consulta(query, (estado,))
+    
+    query += " ORDER BY cert.fecha_emision DESC"
+    return ejecutar_consulta(query)
+
+
+def obtener_certificado_por_id(id_certificacion: int, db_path: str = DB_PATH) -> Optional[Dict]:
+    """Obtiene una certificación por su ID."""
+    from models.database import ejecutar_consulta
+    
+    query = """
+        SELECT cert.*, e.nombres_completos as nombre_estudiante,
+               e.identificacion, c.nombre as nombre_curso,
+               i.calificacion, i.estado_certificacion
+        FROM certificaciones cert
+        JOIN inscripciones i ON cert.id_inscripcion = i.id_inscripcion
+        JOIN estudiantes e ON i.id_estudiante = e.id_estudiante
+        JOIN cursos c ON i.id_curso = c.id_curso
+        WHERE cert.id_certificacion = ?
+    """
+    
+    resultados = ejecutar_consulta(query, (id_certificacion,))
+    return resultados[0] if resultados else None
+
+
+# =============================================================================
+# SERVICIO: REPORTES
+# =============================================================================
+
+def obtener_estadisticas(db_path: str = DB_PATH) -> Dict:
+    """Obtiene estadísticas del sistema."""
+    from models.database import ejecutar_consulta
+    
+    # Total estudiantes
+    estudiantes = ejecutar_consulta("SELECT COUNT(*) as total FROM estudiantes WHERE estado = 'activo'")
+    total_estudiantes = estudiantes[0]['total'] if estudiantes else 0
+    
+    # Total cursos
+    cursos = ejecutar_consulta("SELECT COUNT(*) as total FROM cursos WHERE estado IN ('activo', 'en_curso')")
+    total_cursos = cursos[0]['total'] if cursos else 0
+    
+    # Total inscripciones activas
+    inscripciones = ejecutar_consulta("SELECT COUNT(*) as total FROM inscripciones WHERE estado = 'inscrito'")
+    total_inscripciones = inscripciones[0]['total'] if inscripciones else 0
+    
+    # Total certificados emitidos
+    certs = ejecutar_consulta("SELECT COUNT(*) as total FROM certificaciones WHERE estado = 'emitido'")
+    total_certificados = certs[0]['total'] if certs else 0
+    
+    # Docentes activos
+    docentes = ejecutar_consulta("SELECT COUNT(*) as total FROM docentes WHERE estado = 'activo'")
+    total_docentes = docentes[0]['total'] if docentes else 0
+    
+    # Cursos con más inscripciones
+    cursos_populares = ejecutar_consulta("""
+        SELECT c.nombre, COUNT(i.id_inscripcion) as total
+        FROM cursos c
+        LEFT JOIN inscripciones i ON c.id_curso = i.id_curso AND i.estado = 'inscrito'
+        GROUP BY c.id_curso
+        ORDER BY total DESC
+        LIMIT 5
+    """)
+    
+    return {
+        "total_estudiantes": total_estudiantes,
+        "total_cursos": total_cursos,
+        "total_inscripciones": total_inscripciones,
+        "total_certificados": total_certificados,
+        "total_docentes": total_docentes,
+        "cursos_populares": cursos_populares
+    }
+
+
+# =============================================================================
+# SERVICIO: EXPORTACIÓN DE DATOS
+# =============================================================================
+
+def exportar_estudiantes_csv(db_path: str = DB_PATH) -> str:
+    """
+    Exporta todos los estudiantes a formato CSV.
+    
+    Returns:
+        str: Contenido CSV
+    """
+    from models.database import ejecutar_consulta
+    
+    estudiantes = ejecutar_consulta(
+        "SELECT identificacion, nombres_completos, telefono_fijo, celular, correo_electronico, estado FROM estudiantes ORDER BY nombres_completos"
+    )
+    
+    csv = "identificacion,nombres_completos,telefono_fijo,celular,correo_electronico,estado\n"
+    for est in estudiantes:
+        csv += f'{est["identificacion"]},{est["nombres_completos"]},{est["telefono_fijo"] or ""},{est["celular"]},{est["correo_electronico"]},{est["estado"]}\n'
+    
+    return csv
+
+
+def exportar_cursos_csv(db_path: str = DB_PATH) -> str:
+    """Exporta todos los cursos a formato CSV."""
+    from models.database import ejecutar_consulta
+    
+    cursos = ejecutar_consulta(
+        "SELECT codigo, nombre, modalidad, fecha_inicio, fecha_fin, inversion, estado FROM cursos ORDER BY nombre"
+    )
+    
+    csv = "codigo,nombre,modalidad,fecha_inicio,fecha_fin,inversion,estado\n"
+    for cur in cursos:
+        csv += f'{cur["codigo"]},{cur["nombre"]},{cur["modalidad"]},{cur["fecha_inicio"]},{cur["fecha_fin"]},{cur["inversion"]},{cur["estado"]}\n'
+    
+    return csv
+
+
+def exportar_inscripciones_csv(db_path: str = DB_PATH) -> str:
+    """Exporta todas las inscripciones a formato CSV."""
+    from models.database import ejecutar_consulta
+    
+    query = """
+        SELECT e.identificacion, e.nombres_completos, c.nombre as curso,
+               i.fecha_inscripcion, i.tiene_pdf_cedula, i.tiene_pago,
+               i.estado_certificacion, i.calificacion, i.estado
+        FROM inscripciones i
+        JOIN estudiantes e ON i.id_estudiante = e.id_estudiante
+        JOIN cursos c ON i.id_curso = c.id_curso
+        ORDER BY i.fecha_inscripcion DESC
+    """
+    inscripciones = ejecutar_consulta(query)
+    
+    csv = "identificacion,estudiante,curso,fecha_inscripcion,tiene_pdf_cedula,tiene_pago,estado_certificacion,calificacion,estado\n"
+    for ins in inscripciones:
+        csv += f'{ins["identificacion"]},{ins["nombres_completos"]},{ins["curso"]},{ins["fecha_inscripcion"]},{ins["tiene_pdf_cedula"]},{ins["tiene_pago"]},{ins["estado_certificacion"]},{ins["calificacion"] or ""},{ins["estado"]}\n'
+    
+    return csv
+
+
+# =============================================================================
+# SERVICIO: BÚSQUEDA
+# =============================================================================
+
+def buscar_estudiantes(texto: str, db_path: str = DB_PATH) -> List[Dict]:
+    """
+    Busca estudiantes por nombre, cédula o correo.
+    
+    Args:
+        texto: Texto de búsqueda
+    
+    Returns:
+        List[Dict]: Lista de estudiantes que coinciden
+    """
+    from models.database import ejecutar_consulta
+    
+    patron = f"%{texto}%"
+    query = """
+        SELECT * FROM estudiantes 
+        WHERE nombres_completos LIKE ? OR identificacion LIKE ? OR correo_electronico LIKE ?
+        ORDER BY nombres_completos
+    """
+    return ejecutar_consulta(query, (patron, patron, patron))
+
+
+def buscar_cursos(texto: str, db_path: str = DB_PATH) -> List[Dict]:
+    """Busca cursos por nombre o código."""
+    from models.database import ejecutar_consulta
+    
+    patron = f"%{texto}%"
+    query = """
+        SELECT * FROM cursos 
+        WHERE nombre LIKE ? OR codigo LIKE ?
+        ORDER BY nombre
+    """
+    return ejecutar_consulta(query, (patron, patron))
 
 
 # =============================================================================

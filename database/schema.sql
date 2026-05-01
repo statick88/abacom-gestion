@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS notificaciones (
     fecha_programada TIMESTAMP NOT NULL,
     fecha_envio TIMESTAMP,
     estado TEXT DEFAULT 'pendiente' CHECK(estado IN ('pendiente', 'enviado', 'fallido', 'cancelado')),
-    canal TEXT DEFAULT 'whatsapp' CHECK(canal IN ('whatsapp', 'email', 'sms')),
+    canal TEXT DEFAULT 'email' CHECK(canal IN ('email', 'sms')),
     destinatarios TEXT,  -- JSON con lista de destinatarios
     fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id_curso) REFERENCES cursos(id_curso)
@@ -140,15 +140,13 @@ CREATE TABLE IF NOT EXISTS notificaciones (
 -- ============================================================================
 -- TABLA: aulas_virtuales
 -- ============================================================================
--- Almacena información de aulas virtuales y grupos de WhatsApp
+-- Almacena información de aulas virtuales y enlaces de reunión
 
 CREATE TABLE IF NOT EXISTS aulas_virtuales (
     id_aula INTEGER PRIMARY KEY AUTOINCREMENT,
     id_curso INTEGER NOT NULL,
     plataforma TEXT DEFAULT 'Google Meet',
     link_reunion TEXT,
-    grupo_whatsapp TEXT,
-    link_grupo_whatsapp TEXT,
     estado TEXT DEFAULT 'creada' CHECK(estado IN ('creada', 'activa', 'cerrada')),
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id_curso) REFERENCES cursos(id_curso)

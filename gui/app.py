@@ -1,8 +1,8 @@
 """
 ================================================================================
-INTERFAZ GRAFICA REAL (PyQt5) - SISTEMA DE GESTION EDUCATIVA ABACOM
+INTERFAZ GRAFICA CON TKINTER - SISTEMA DE GESTIÓN EDUCATIVA ABACOM
 ================================================================================
-Migración de consola a PyQt5 (versión 5.15 instalada).
+Aplicación de escritorio usando tkinter (builtin de Python).
 
 Autor: Diego Medardo Saavedra García
 Instituto: ABACOM
@@ -10,22 +10,17 @@ Instituto: ABACOM
 """
 
 import sys
+import os
 from pathlib import Path
 
 # Agregar el directorio raíz al path
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QTableWidget, QTableWidgetItem, QLabel, QFormLayout,
-    QDialog, QMessageBox, QLineEdit
-)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+import tkinter as tk
+from tkinter import ttk, messagebox, simpledialog
+from typing import Optional, List, Dict
 
-from models.database import ejecutar_consulta, ejecutar_modificacion
-from models.entities import Estudiante, Curso, Inscripcion, Certificado
 from services.servicios import (
     validar_cedula_ecuador,
     registrar_estudiante,
@@ -33,396 +28,928 @@ from services.servicios import (
     registrar_curso,
     listar_cursos,
     inscribir_estudiante,
-    generar_certificado
+    generar_certificado,
+    registrar_docente,
+    listar_docentes,
+    listar_inscripciones,
+    listar_certificaciones,
+    obtener_estadisticas,
+    buscar_estudiantes,
+    buscar_cursos
 )
 
+
 # =============================================================================
-# VENTANA PRINCIPAL
+# CLASE PRINCIPAL - VENTANA DE LA APLICACIÓN
 # =============================================================================
 
-class ABACOMGUI(QMainWindow):
-    """Aplicación principal GUI para ABACOM."""
+class ABACOMGUI:
+    """Aplicación principal GUI para ABACOM usando tkinter."""
     
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("ABACOM - Sistema de Gestión Educativa")
-        self.setGeometry(100, 100, 900, 600)
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("ABACOM - Sistema de Gestión Educativa")
+        self.root.geometry("1000x700")
+        self.root.minsize(800, 600)
         
-        self.setup_ui()
-        self.load_stats()
+        # Estilos
+        self.setup_styles()
         
-    def setup_ui(self):
-        """Configura la interfaz de usuario."""
-        # Widget central
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        # UI principal
+        self.create_header()
+        self.create_main_menu()
+        self.create_status_bar()
         
-        # Layout principal
-        main_layout = QVBoxLayout(central_widget)
+        # Cargar estadísticas iniciales
+        self.actualizar_estadisticas()
+        
+    def setup_styles(self):
+        """Configura estilos de la aplicación."""
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        # Configurar colores
+        self.colors = {
+            'primary': '#1a237e',
+            'secondary': '#283593',
+            'accent': '#3949ab',
+            'bg': '#f5f5f5',
+            'success': '#4caf50',
+            'warning': '#ff9800',
+            'danger': '#f44336'
+        }
+        
+        # Estilo para botones
+        style.configure('Primary.TButton', font=('Helvetica', 10, 'bold'), padding=10)
+        style.configure('Success.TButton', background=self.colors['success'], foreground='white')
+        
+    def create_header(self):
+        """Crea el encabezado de la aplicación."""
+        header_frame = tk.Frame(self.root, bg=self.colors['primary'], height=80)
+        header_frame.pack(fill='x')
+        header_frame.pack_propagate(False)
         
         # Título
-        title_label = QLabel("🎓 SISTEMA DE GESTION ABACOM")
-        title_font = QFont("Helvetica", 20)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        title_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(title_label)
+        title_label = tk.Label(
+            header_frame,
+            text="🎓 SISTEMA DE GESTIÓN ABACOM",
+            font=('Helvetica', 22, 'bold'),
+            fg='white',
+            bg=self.colors['primary']
+        )
+        title_label.pack(pady=15)
         
-        subtitle_label = QLabel("Instituto de Tecnología y Ciencias")
-        subtitle_font = QFont("Helvetica", 12)
-        subtitle_label.setFont(subtitle_font)
-        subtitle_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(subtitle_label)
+        # Subtítulo
+        subtitle_label = tk.Label(
+            header_frame,
+            text="Instituto de Tecnología y Ciencias",
+            font=('Helvetica', 10),
+            fg='#b3e5fc',
+            bg=self.colors['primary']
+        )
+        subtitle_label.pack()
         
-        # Botones principales
-        btn_layout = QHBoxLayout()
+    def create_main_menu(self):
+        """Crea el menú principal con botones."""
+        menu_frame = tk.Frame(self.root, bg=self.colors['bg'])
+        menu_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
-        # Estudiantes
-        btn_est = QPushButton("👨 Estudiantes")
-        btn_est.clicked.connect(self.open_estudiantes)
-        btn_layout.addWidget(btn_est)
+        # Título del menú
+        tk.Label(
+            menu_frame,
+            text="📋 MENÚ PRINCIPAL",
+            font=('Helvetica', 16, 'bold'),
+            bg=self.colors['bg']
+        ).pack(pady=(0, 20))
         
-        # Cursos
-        btn_cur = QPushButton("📚 Cursos")
-        btn_cur.clicked.connect(self.open_cursos)
-        btn_layout.addWidget(btn_cur)
+        # Grid de botones
+        buttons = [
+            ("👨‍🎓 Estudiantes", self.open_estudiantes),
+            ("👨‍🏫 Docentes", self.open_docentes),
+            ("📚 Cursos", self.open_cursos),
+            ("📝 Inscripciones", self.open_inscripciones),
+            ("🏆 Certificados", self.open_certificados),
+            ("📊 Reportes", self.open_reportes),
+        ]
         
-        # Inscripciones
-        btn_ins = QPushButton("📝 Inscripciones")
-        btn_ins.clicked.connect(self.open_inscripciones)
-        btn_layout.addWidget(btn_ins)
+        # Crear grid 2x3
+        for i, (text, command) in enumerate(buttons):
+            row = i // 3
+            col = i % 3
+            
+            btn = tk.Button(
+                menu_frame,
+                text=text,
+                font=('Helvetica', 14),
+                width=20,
+                height=2,
+                bg=self.colors['secondary'],
+                fg='white',
+                cursor='hand2',
+                command=command,
+                relief='flat'
+            )
+            btn.grid(row=row, column=col, padx=10, pady=10, sticky='nsew')
+            
+        # Panel de estadísticas
+        stats_frame = tk.LabelFrame(
+            menu_frame,
+            text="📊 ESTADÍSTICAS",
+            font=('Helvetica', 12, 'bold'),
+            bg=self.colors['bg'],
+            padx=10,
+            pady=10
+        )
+        stats_frame.pack(fill='x', pady=20)
         
-        # Certificados
-        btn_cert = QPushButton("🏆 Certificados")
-        btn_cert.clicked.connect(self.open_certificados)
-        btn_layout.addWidget(btn_cert)
+        self.stats_label = tk.Label(
+            stats_frame,
+            text="Cargando...",
+            font=('Courier', 10),
+            bg=self.colors['bg'],
+            justify='left'
+        )
+        self.stats_label.pack(fill='x')
         
-        # Reportes
-        btn_rep = QPushButton("📊 Reportes")
-        btn_rep.clicked.connect(self.open_reportes)
-        btn_layout.addWidget(btn_rep)
+    def create_status_bar(self):
+        """Crea la barra de estado."""
+        status_frame = tk.Frame(self.root, bg='#333', height=30)
+        status_frame.pack(fill='x')
+        status_frame.pack_propagate(False)
         
-        main_layout.addLayout(btn_layout)
+        self.status_label = tk.Label(
+            status_frame,
+            text="✅ Sistema listo",
+            font=('Helvetica', 9),
+            fg='white',
+            bg='#333',
+            anchor='w'
+        )
+        self.status_label.pack(side='left', padx=10)
         
-        # Área de información
-        self.stats_label = QLabel()
-        self.stats_label.setAlignment(Qt.AlignLeft)
-        main_layout.addWidget(self.stats_label)
+        version_label = tk.Label(
+            status_frame,
+            text="v1.0.0 | Diego Medardo Saavedra García",
+            font=('Helvetica', 8),
+            fg='#aaa',
+            bg='#333'
+        )
+        version_label.pack(side='right', padx=10)
         
-        # Barra de estado
-        self.statusBar().showMessage("✅ Sistema listo")
+    def actualizar_estadisticas(self):
+        """Actualiza las estadísticas en el panel."""
+        stats = obtener_estadisticas()
         
-    def load_stats(self):
-        """Carga estadísticas rápidas."""
-        estudiantes = listar_estudiantes()
-        cursos = listar_cursos()
-        
-        stats_text = f"""
-        📊 Estadísticas Rápidas:
-        
-        • Total Estudiantes: {len(estudiantes)}
-        • Total Cursos: {len(cursos)}
-        • Base de Datos: Conectada ✅
-        • Versión: 1.0.0
-        • Autor: Diego Medardo Saavedra García
+        texto = f"""
+   Estudiantes: {stats['total_estudiantes']}  |  Docentes: {stats['total_docentes']}
+   Cursos: {stats['total_cursos']}  |  Inscripciones: {stats['total_inscripciones']}
+   Certificados Emitidos: {stats['total_certificados']}
         """
-        self.stats_label.setText(stats_text)
+        self.stats_label.config(text=texto)
         
     def open_estudiantes(self):
-        """Abre la ventana de gestión de estudiantes."""
-        self.estudiantes_window = EstudiantesWindow(self)
-        self.estudiantes_window.show()
+        """Abre ventana de gestión de estudiantes."""
+        self.ventana_activa = VentanaEstudiantes(self.root)
+        
+    def open_docentes(self):
+        """Abre ventana de gestión de docentes."""
+        self.ventana_activa = VentanaDocentes(self.root)
         
     def open_cursos(self):
-        """Abre la ventana de gestión de cursos."""
-        self.cursos_window = CursosWindow(self)
-        self.cursos_window.show()
+        """Abre ventana de gestión de cursos."""
+        self.ventana_activa = VentanaCursos(self.root)
         
     def open_inscripciones(self):
-        """Abre la ventana de inscripciones."""
-        QMessageBox.information(self, "Inscripciones", 
-            "Función en desarrollo...\n\nPróximamente disponible.")
+        """Abre ventana de inscripciones."""
+        self.ventana_activa = VentanaInscripciones(self.root)
         
     def open_certificados(self):
-        """Abre la ventana de certificados."""
-        QMessageBox.information(self, "Certificados", 
-            "Función en desarrollo...\n\nPróximamente disponible.")
+        """Abre ventana de certificados."""
+        self.ventana_activa = VentanaCertificados(self.root)
         
     def open_reportes(self):
-        """Abre la ventana de reportes."""
-        QMessageBox.information(self, "Reportes", 
-            "Función en desarrollo...\n\nPróximamente disponible.")
+        """Abre ventana de reportes."""
+        self.ventana_activa = VentanaReportes(self.root)
+
 
 # =============================================================================
 # VENTANA: ESTUDIANTES
 # =============================================================================
 
-class EstudiantesWindow(QWidget):
+class VentanaEstudiantes:
     """Ventana de gestión de estudiantes."""
     
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("👨 Gestión de Estudiantes")
-        self.setGeometry(100, 100, 800, 500)
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("👨‍🎓 Gestión de Estudiantes")
+        self.window.geometry("900x550")
         
-        self.setup_ui()
-        self.load_data()
+        # Frame principal
+        main_frame = tk.Frame(self.window, bg='#f5f5f5')
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
         
-    def setup_ui(self):
-        """Configura la interfaz."""
-        layout = QVBoxLayout(self)
+        # Título
+        tk.Label(
+            main_frame,
+            text="👨‍🎓 GESTIÓN DE ESTUDIANTES",
+            font=('Helvetica', 14, 'bold'),
+            bg='#f5f5f5'
+        ).pack(pady=10)
         
         # Botones superiores
-        top_layout = QHBoxLayout()
+        btn_frame = tk.Frame(main_frame, bg='#f5f5f5')
+        btn_frame.pack(fill='x', pady=5)
         
-        btn_new = QPushButton("➕ Nuevo Estudiante")
-        btn_new.clicked.connect(self.new_estudiante)
-        top_layout.addWidget(btn_new)
-        
-        btn_refresh = QPushButton("🔄 Actualizar")
-        btn_refresh.clicked.connect(self.load_data)
-        top_layout.addWidget(btn_refresh)
-        
-        top_layout.addStretch()
-        layout.addLayout(top_layout)
+        tk.Button(btn_frame, text="➕ Nuevo Estudiante", command=self.nuevo_estudiante,
+                  bg='#4caf50', fg='white', font=('Helvetica', 10)).pack(side='left', padx=5)
+        tk.Button(btn_frame, text="🔄 Actualizar", command=self.cargar_datos,
+                  bg='#2196f3', fg='white', font=('Helvetica', 10)).pack(side='left', padx=5)
+        tk.Button(btn_frame, text="🔍 Buscar", command=self.buscar_estudiante,
+                  bg='#ff9800', fg='white', font=('Helvetica', 10)).pack(side='left', padx=5)
         
         # Tabla
-        self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["ID", "Cédula", "Nombres", "Celular", "Correo"])
-        self.table.horizontalHeader().setStretchLastSection(True)
-        layout.addWidget(self.table)
+        columns = ('ID', 'Cédula', 'Nombres', 'Teléfono', 'Celular', 'Correo', 'Estado')
+        self.tree = ttk.Treeview(main_frame, columns=columns, show='headings', height=18)
         
-        # Doble clic para ver detalles
-        self.table.cellDoubleClicked.connect(self.view_estudiante)
+        for col in columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=100 if col != 'Nombres' else 180)
         
-    def load_data(self):
+        scrollbar = ttk.Scrollbar(main_frame, orient='vertical', command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        # Cargar datos
+        self.cargar_datos()
+        
+    def cargar_datos(self):
         """Carga los datos en la tabla."""
-        self.table.setRowCount(0)  # Limpiar tabla
+        for item in self.tree.get_children():
+            self.tree.delete(item)
         
         estudiantes = listar_estudiantes()
-        
         for est in estudiantes:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            
-            self.table.setItem(row, 0, QTableWidgetItem(str(est['id_estudiante'])))
-            self.table.setItem(row, 1, QTableWidgetItem(est['identificacion']))
-            self.table.setItem(row, 2, QTableWidgetItem(est['nombres_completos']))
-            self.table.setItem(row, 3, QTableWidgetItem(est['celular']))
-            self.table.setItem(row, 4, QTableWidgetItem(est['correo_electronico']))
-            
-    def new_estudiante(self):
-        """Abre formulario para nuevo estudiante."""
-        self.form = EstudianteForm(self, callback=self.load_data)
-        self.form.show()
-        
-    def view_estudiante(self):
-        """Ver detalles del estudiante seleccionado."""
-        current_row = self.table.currentRow()
-        if current_row < 0:
-            return
-            
-        id_est = int(self.table.item(current_row, 0).text())
-        
-        # Obtener datos completos
-        query = "SELECT * FROM estudiantes WHERE id_estudiante = ?"
-        result = ejecutar_consulta(query, (id_est,))
-        
-        if result:
-            est = result[0]
-            info = f"""
-            ID: {est['id_estudiante']}
-            Cédula: {est['identificacion']}
-            Nombres: {est['nombres_completos']}
-            Teléfono: {est['telefono_fijo'] or 'N/A'}
-            Celular: {est['celular']}
-            Correo: {est['correo_electronico']}
-            Estado: {est['estado']}
-            """
-            QMessageBox.information(self, "Detalles del Estudiante", info)
-
-# =============================================================================
-# FORMULARIO: ESTUDIANTE
-# =============================================================================
-
-class EstudianteForm(QDialog):
-    """Formulario para crear/editar estudiante."""
+            self.tree.insert('', 'end', values=(
+                est['id_estudiante'],
+                est['identificacion'],
+                est['nombres_completos'],
+                est['telefono_fijo'] or 'N/A',
+                est['celular'],
+                est['correo_electronico'],
+                est['estado']
+            ))
     
-    def __init__(self, parent=None, id_estudiante=None, callback=None):
-        super().__init__(parent)
-        self.callback = callback
-        self.id_estudiante = id_estudiante
+    def nuevo_estudiante(self):
+        """Abre formulario para nuevo estudiante."""
+        form = FormularioEstudiante(self.window)
+        if form.result:
+            self.cargar_datos()
+    
+    def buscar_estudiante(self):
+        """Busca estudiante por texto."""
+        texto = simpledialog.askstring("Buscar", "Ingrese nombre, cédula o correo:")
+        if texto:
+            resultados = buscar_estudiantes(texto)
+            if resultados:
+                for item in self.tree.get_children():
+                    self.tree.delete(item)
+                for est in resultados:
+                    self.tree.insert('', 'end', values=(
+                        est['id_estudiante'],
+                        est['identificacion'],
+                        est['nombres_completos'],
+                        est['telefono_fijo'] or 'N/A',
+                        est['celular'],
+                        est['correo_electronico'],
+                        est['estado']
+                    ))
+            else:
+                messagebox.showinfo("Buscar", "No se encontraron resultados")
+
+
+class FormularioEstudiante:
+    """Formulario para registrar estudiante."""
+    
+    def __init__(self, parent):
+        self.result = None
         
-        self.setWindowTitle("➕ Nuevo Estudiante" if not id_estudiante else "✏ Editar Estudiante")
-        self.setGeometry(100, 100, 500, 400)
+        self.window = tk.Toplevel(parent)
+        self.window.title("➕ Nuevo Estudiante")
+        self.window.geometry("450x400")
+        self.window.transient(parent)
+        self.window.grab_set()
         
-        self.setup_ui()
+        main_frame = tk.Frame(self.window, padx=20, pady=20)
+        main_frame.pack(fill='both', expand=True)
         
-        if id_estudiante:
-            self.load_estudiante()
+        # Campos
+        labels = ['Cédula:', 'Nombres Completos:', 'Teléfono Fijo:', 'Celular:', 'Correo:']
+        self.entries = {}
+        
+        for i, label in enumerate(labels):
+            tk.Label(main_frame, text=label, font=('Helvetica', 10)).grid(
+                row=i, column=0, sticky='w', pady=5)
             
-    def setup_ui(self):
-        """Configura el formulario."""
-        layout = QFormLayout(self)
-        
-        # Cédula
-        self.cedula_edit = QLineEdit()
-        layout.addRow("Cédula de Identidad:", self.cedula_edit)
-        
-        # Nombres
-        self.nombres_edit = QLineEdit()
-        layout.addRow("Nombres Completos:", self.nombres_edit)
-        
-        # Teléfono fijo
-        self.telefono_edit = QLineEdit()
-        layout.addRow("Teléfono Fijo:", self.telefono_edit)
-        
-        # Celular
-        self.celular_edit = QLineEdit()
-        layout.addRow("Celular:", self.celular_edit)
-        
-        # Correo
-        self.correo_edit = QLineEdit()
-        layout.addRow("Correo Electrónico:", self.correo_edit)
+            entry = tk.Entry(main_frame, width=35, font=('Helvetica', 10))
+            entry.grid(row=i, column=1, pady=5, padx=5)
+            self.entries[label.replace(':', '').lower().replace(' ', '_')] = entry
         
         # Botones
-        btn_layout = QHBoxLayout()
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.grid(row=len(labels), column=0, columnspan=2, pady=20)
         
-        btn_save = QPushButton("✅ Guardar")
-        btn_save.clicked.connect(self.save_estudiante)
-        btn_layout.addWidget(btn_save)
+        tk.Button(btn_frame, text="✅ Guardar", command=self.guardar,
+                  bg='#4caf50', fg='white', width=12).pack(side='left', padx=5)
+        tk.Button(btn_frame, text="❌ Cancelar", command=self.window.destroy,
+                  bg='#f44336', fg='white', width=12).pack(side='left', padx=5)
         
-        btn_cancel = QPushButton("❌ Cancelar")
-        btn_cancel.clicked.connect(self.reject)
-        btn_layout.addWidget(btn_cancel)
-        
-        layout.addRow(btn_layout)
-        
-        # Enfocar en cédula
-        self.cedula_edit.setFocus()
-        
-    def load_estudiante(self):
-        """Carga datos del estudiante para edición."""
-        query = "SELECT * FROM estudiantes WHERE id_estudiante = ?"
-        result = ejecutar_consulta(query, (self.id_estudiante,))
-        
-        if result:
-            est = result[0]
-            self.cedula_edit.setText(est['identificacion'])
-            self.nombres_edit.setText(est['nombres_completos'])
-            self.telefono_edit.setText(est['telefono_fijo'] or '')
-            self.celular_edit.setText(est['celular'])
-            self.correo_edit.setText(est['correo_electronico'])
-            
-    def save_estudiante(self):
+        self.entries['nombres_completos'].focus()
+    
+    def guardar(self):
         """Guarda el estudiante."""
-        cedula = self.cedula_edit.text().strip()
-        nombres = self.nombres_edit.text().strip()
-        telefono = self.telefono_edit.text().strip() or None
-        celular = self.celular_edit.text().strip()
-        correo = self.correo_edit.text().strip()
+        datos = {}
+        for key, entry in self.entries.items():
+            datos[key] = entry.get().strip()
         
-        # Validaciones
-        if not cedula or not validar_cedula_ecuador(cedula):
-            QMessageBox.critical(self, "Error", "Cédula inválida. Debe tener 10 dígitos.")
+        if not datos['nombres_completos'] or not datos['celular'] or not datos['correo_electronico']:
+            messagebox.showerror("Error", "Los campos nombres, celular y correo son requeridos")
             return
-            
-        if not nombres:
-            QMessageBox.critical(self, "Error", "Nombres son requeridos.")
+        
+        if not validar_cedula_ecuador(datos['cedula']):
+            messagebox.showerror("Error", "Cédula inválida. Debe tener 10 dígitos")
             return
-            
-        if not celular:
-            QMessageBox.critical(self, "Error", "Celular es requerido.")
-            return
-            
-        if not correo:
-            QMessageBox.critical(self, "Error", "Correo es requerido.")
-            return
-            
-        # Guardar
+        
         result = registrar_estudiante(
-            identificacion=cedula,
-            nombres_completos=nombres,
-            celular=celular,
-            correo_electronico=correo,
-            telefono_fijo=telefono
+            identificacion=datos['cedula'],
+            nombres_completos=datos['nombres_completos'],
+            telefono_fijo=datos['telefono_fijo'] or None,
+            celular=datos['celular'],
+            correo_electronico=datos['correo_electronico']
         )
         
         if result['exito']:
-            QMessageBox.information(self, "Éxito", result['mensaje'])
-            if self.callback:
-                self.callback()
-            self.accept()
+            messagebox.showinfo("Éxito", result['mensaje'])
+            self.result = True
+            self.window.destroy()
         else:
-            QMessageBox.critical(self, "Error", result['error'])
+            messagebox.showerror("Error", result['error'])
+
 
 # =============================================================================
-# VENTANA: CURSOS (Simplificada)
+# VENTANA: DOCENTES
 # =============================================================================
 
-class CursosWindow(QWidget):
-    """Ventana de gestión de cursos."""
+class VentanaDocentes:
+    """Ventana de gestión de docentes."""
     
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("📚 Gestión de Cursos")
-        self.setGeometry(100, 100, 800, 500)
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("👨‍🏫 Gestión de Docentes")
+        self.window.geometry("900x550")
         
-        self.setup_ui()
-        self.load_data()
+        main_frame = tk.Frame(self.window, bg='#f5f5f5')
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
         
-    def setup_ui(self):
-        """Configura la interfaz."""
-        layout = QVBoxLayout(self)
+        tk.Label(main_frame, text="👨‍🏫 GESTIÓN DE DOCENTES",
+                font=('Helvetica', 14, 'bold'), bg='#f5f5f5').pack(pady=10)
         
         # Botones
-        top_layout = QHBoxLayout()
+        btn_frame = tk.Frame(main_frame, bg='#f5f5f5')
+        btn_frame.pack(fill='x', pady=5)
         
-        btn_new = QPushButton("➕ Nuevo Curso")
-        btn_new.clicked.connect(self.new_curso)
-        top_layout.addWidget(btn_new)
-        
-        btn_refresh = QPushButton("🔄 Actualizar")
-        btn_refresh.clicked.connect(self.load_data)
-        top_layout.addWidget(btn_refresh)
-        
-        top_layout.addStretch()
-        layout.addLayout(top_layout)
+        tk.Button(btn_frame, text="➕ Nuevo Docente", command=self.nuevo_docente,
+                  bg='#4caf50', fg='white').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="🔄 Actualizar", command=self.cargar_datos,
+                  bg='#2196f3', fg='white').pack(side='left', padx=5)
         
         # Tabla
-        self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["ID", "Código", "Nombre", "Inicio", "Estado"])
-        layout.addWidget(self.table)
+        columns = ('ID', 'Nombres', 'Teléfono', 'Celular', 'Correo', 'Especialización', 'Estado')
+        self.tree = ttk.Treeview(main_frame, columns=columns, show='headings', height=18)
         
-    def load_data(self):
-        """Carga los cursos."""
-        self.table.setRowCount(0)
+        for col in columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=100 if 'Nombres' not in col else 150)
         
-        cursos = listar_cursos()
+        scrollbar = ttk.Scrollbar(main_frame, orient='vertical', command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
         
-        for cur in cursos:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            
-            self.table.setItem(row, 0, QTableWidgetItem(str(cur['id_curso'])))
-            self.table.setItem(row, 1, QTableWidgetItem(cur['codigo']))
-            self.table.setItem(row, 2, QTableWidgetItem(cur['nombre']))
-            self.table.setItem(row, 3, QTableWidgetItem(str(cur['fecha_inicio'])))
-            self.table.setItem(row, 4, QTableWidgetItem(cur['estado']))
-            
-    def new_curso(self):
-        """Abre formulario de curso."""
-        QMessageBox.information(self, "Nuevo Curso", 
-            "Función en desarrollo...\n\nPróximamente disponible.")
+        self.tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        self.cargar_datos()
+    
+    def cargar_datos(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        for doc in listar_docentes():
+            self.tree.insert('', 'end', values=(
+                doc['id_docente'], doc['nombres_completos'],
+                doc['telefono'] or 'N/A', doc['celular'],
+                doc['correo_electronico'], doc['especializacion'] or 'N/A',
+                doc['estado']
+            ))
+    
+    def nuevo_docente(self):
+        form = FormularioDocente(self.window)
+        if form.result:
+            self.cargar_datos()
+
+
+class FormularioDocente:
+    def __init__(self, parent):
+        self.result = None
+        self.window = tk.Toplevel(parent)
+        self.window.title("➕ Nuevo Docente")
+        self.window.geometry("400x350")
+        self.window.transient(parent)
+        self.window.grab_set()
+        
+        main_frame = tk.Frame(self.window, padx=20, pady=20)
+        main_frame.pack(fill='both', expand=True)
+        
+        labels = ['Nombres:', 'Teléfono:', 'Celular:', 'Correo:', 'Especialización:']
+        self.entries = {}
+        
+        for i, label in enumerate(labels):
+            tk.Label(main_frame, text=label).grid(row=i, column=0, sticky='w', pady=5)
+            entry = tk.Entry(main_frame, width=30)
+            entry.grid(row=i, column=1, pady=5, padx=5)
+            self.entries[label.replace(':', '').lower()] = entry
+        
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.grid(row=len(labels), columnspan=2, pady=20)
+        
+        tk.Button(btn_frame, text="✅ Guardar", command=self.guardar,
+                  bg='#4caf50', fg='white').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="❌ Cancelar", command=self.window.destroy,
+                  bg='#f44336', fg='white').pack(side='left', padx=5)
+    
+    def guardar(self):
+        datos = {k: v.get().strip() for k, v in self.entries.items()}
+        
+        if not datos['nombres'] or not datos['celular'] or not datos['correo']:
+            messagebox.showerror("Error", "Nombres, celular y correo son requeridos")
+            return
+        
+        result = registrar_docente(
+            nombres_completos=datos['nombres'],
+            telefono=datos['teléfono'] or None,
+            celular=datos['celular'],
+            correo_electronico=datos['correo'],
+            especializacion=datos['especialización'] or None
+        )
+        
+        if result['exito']:
+            messagebox.showinfo("Éxito", result['mensaje'])
+            self.result = True
+            self.window.destroy()
+        else:
+            messagebox.showerror("Error", result['error'])
+
+
+# =============================================================================
+# VENTANA: CURSOS
+# =============================================================================
+
+class VentanaCursos:
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("📚 Gestión de Cursos")
+        self.window.geometry("950x550")
+        
+        main_frame = tk.Frame(self.window, bg='#f5f5f5')
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        tk.Label(main_frame, text="📚 GESTIÓN DE CURSOS",
+                font=('Helvetica', 14, 'bold'), bg='#f5f5f5').pack(pady=10)
+        
+        btn_frame = tk.Frame(main_frame, bg='#f5f5f5')
+        btn_frame.pack(fill='x', pady=5)
+        
+        tk.Button(btn_frame, text="➕ Nuevo Curso", command=self.nuevo_curso,
+                  bg='#4caf50', fg='white').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="🔄 Actualizar", command=self.cargar_datos,
+                  bg='#2196f3', fg='white').pack(side='left', padx=5)
+        
+        columns = ('ID', 'Código', 'Nombre', 'Modalidad', 'Inicio', 'Fin', 'Inversión', 'Estado')
+        self.tree = ttk.Treeview(main_frame, columns=columns, show='headings', height=18)
+        
+        for col in columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=80 if col not in ['Nombre', 'Código'] else 100)
+        
+        scrollbar = ttk.Scrollbar(main_frame, orient='vertical', command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        self.cargar_datos()
+    
+    def cargar_datos(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        for cur in listar_cursos():
+            self.tree.insert('', 'end', values=(
+                cur['id_curso'], cur['codigo'], cur['nombre'], cur['modalidad'],
+                cur['fecha_inicio'], cur['fecha_fin'], f"${cur['inversion']}", cur['estado']
+            ))
+    
+    def nuevo_curso(self):
+        form = FormularioCurso(self.window)
+        if form.result:
+            self.cargar_datos()
+
+
+class FormularioCurso:
+    def __init__(self, parent):
+        self.result = None
+        self.window = tk.Toplevel(parent)
+        self.window.title("➕ Nuevo Curso")
+        self.window.geometry("450x450")
+        self.window.transient(parent)
+        self.window.grab_set()
+        
+        main_frame = tk.Frame(self.window, padx=20, pady=20)
+        main_frame.pack(fill='both', expand=True)
+        
+        fields = [
+            ('código', 'Código:'),
+            ('nombre', 'Nombre:'),
+            ('modalidad', 'Modalidad:'),
+            ('inicio', 'Fecha Inicio (YYYY-MM-DD):'),
+            ('fin', 'Fecha Fin (YYYY-MM-DD):'),
+            ('hora_inicio', 'Hora Inicio (HH:MM):'),
+            ('hora_fin', 'Hora Fin (HH:MM):'),
+            ('días', 'Días (ej: Lunes,Miércoles):'),
+            ('inversión', 'Inversión:'),
+        ]
+        
+        self.entries = {}
+        
+        for i, (key, label) in enumerate(fields):
+            tk.Label(main_frame, text=label).grid(row=i, column=0, sticky='w', pady=3)
+            entry = tk.Entry(main_frame, width=30)
+            entry.grid(row=i, column=1, pady=3, padx=5)
+            self.entries[key] = entry
+        
+        # Valores por defecto
+        self.entries['inversión'].insert(0, '150.0')
+        self.entries['hora_inicio'].insert(0, '19:00')
+        self.entries['hora_fin'].insert(0, '21:00')
+        self.entries['días'].insert(0, 'Lunes,Miércoles,Viernes')
+        
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.grid(row=len(fields), columnspan=2, pady=15)
+        
+        tk.Button(btn_frame, text="✅ Guardar", command=self.guardar,
+                  bg='#4caf50', fg='white').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="❌ Cancelar", command=self.window.destroy,
+                  bg='#f44336', fg='white').pack(side='left', padx=5)
+    
+    def guardar(self):
+        datos = {k: v.get().strip() for k, v in self.entries.items()}
+        
+        if not datos['código'] or not datos['nombre']:
+            messagebox.showerror("Error", "Código y nombre son requeridos")
+            return
+        
+        try:
+            inversion = float(datos['inversión'])
+        except ValueError:
+            inversion = 150.0
+        
+        result = registrar_curso(
+            codigo=datos['código'],
+            nombre=datos['nombre'],
+            modalidad='Online',
+            fecha_inicio=datos['inicio'],
+            fecha_fin=datos['fin'],
+            horario_inicio=datos['hora_inicio'],
+            horario_fin=datos['hora_fin'],
+            dias_semana=datos['días'],
+            inversion=inversion
+        )
+        
+        if result['exito']:
+            messagebox.showinfo("Éxito", result['mensaje'])
+            self.result = True
+            self.window.destroy()
+        else:
+            messagebox.showerror("Error", result['error'])
+
+
+# =============================================================================
+# VENTANA: INSCRIPCIONES
+# =============================================================================
+
+class VentanaInscripciones:
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("📝 Gestión de Inscripciones")
+        self.window.geometry("950x550")
+        
+        main_frame = tk.Frame(self.window, bg='#f5f5f5')
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        tk.Label(main_frame, text="📝 GESTIÓN DE INSCRIPCIONES",
+                font=('Helvetica', 14, 'bold'), bg='#f5f5f5').pack(pady=10)
+        
+        btn_frame = tk.Frame(main_frame, bg='#f5f5f5')
+        btn_frame.pack(fill='x', pady=5)
+        
+        tk.Button(btn_frame, text="➕ Nueva Inscripción", command=self.nueva_inscripcion,
+                  bg='#4caf50', fg='white').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="🔄 Actualizar", command=self.cargar_datos,
+                  bg='#2196f3', fg='white').pack(side='left', padx=5)
+        
+        columns = ('ID', 'Estudiante', 'Cédula', 'Curso', 'Fecha', 'PDF', 'Pago', 'Estado')
+        self.tree = ttk.Treeview(main_frame, columns=columns, show='headings', height=18)
+        
+        for col in columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=80 if col not in ['Estudiante', 'Curso'] else 150)
+        
+        scrollbar = ttk.Scrollbar(main_frame, orient='vertical', command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        self.cargar_datos()
+    
+    def cargar_datos(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        for ins in listar_inscripciones():
+            self.tree.insert('', 'end', values=(
+                ins['id_inscripcion'], ins['nombre_estudiante'], ins['identificacion'],
+                ins['nombre_curso'], str(ins['fecha_inscripcion'])[:10] if ins['fecha_inscripcion'] else '',
+                '✅' if ins['tiene_pdf_cedula'] else '❌',
+                '✅' if ins['tiene_pago'] else '❌',
+                ins['estado']
+            ))
+    
+    def nueva_inscripcion(self):
+        form = FormularioInscripcion(self.window)
+        if form.result:
+            self.cargar_datos()
+
+
+class FormularioInscripcion:
+    def __init__(self, parent):
+        self.result = None
+        self.window = tk.Toplevel(parent)
+        self.window.title("➕ Nueva Inscripción")
+        self.window.geometry("400x250")
+        self.window.transient(parent)
+        self.window.grab_set()
+        
+        main_frame = tk.Frame(self.window, padx=20, pady=20)
+        main_frame.pack(fill='both', expand=True)
+        
+        # Seleccionar estudiante
+        tk.Label(main_frame, text="Estudiante:").grid(row=0, column=0, sticky='w', pady=5)
+        self.estudiante_combo = ttk.Combobox(main_frame, width=30)
+        estudiantes = listar_estudiantes()
+        self.estudiante_combo['values'] = [f"{e['nombres_completos']} ({e['identificacion']})" for e in estudiantes]
+        self.estudiante_combo.grid(row=0, column=1, pady=5)
+        
+        # Seleccionar curso
+        tk.Label(main_frame, text="Curso:").grid(row=1, column=0, sticky='w', pady=5)
+        self.curso_combo = ttk.Combobox(main_frame, width=30)
+        cursos = listar_cursos(estado='activo')
+        self.curso_combo['values'] = [f"{c['nombre']} ({c['codigo']})" for c in cursos]
+        self.curso_combo.grid(row=1, column=1, pady=5)
+        
+        # Checkboxes
+        self.pdf_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(main_frame, text="Tiene copia de cédula en PDF", variable=self.pdf_var).grid(row=2, columnspan=2, pady=10)
+        
+        self.pago_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(main_frame, text="Tiene comprobante de pago", variable=self.pago_var).grid(row=3, columnspan=2, pady=10)
+        
+        # Botones
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.grid(row=4, columnspan=2, pady=15)
+        
+        tk.Button(btn_frame, text="✅ Inscribir", command=self.guardar,
+                  bg='#4caf50', fg='white').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="❌ Cancelar", command=self.window.destroy,
+                  bg='#f44336', fg='white').pack(side='left', padx=5)
+    
+    def guardar(self):
+        est_idx = self.estudiante_combo.current()
+        cur_idx = self.curso_combo.current()
+        
+        if est_idx < 0 or cur_idx < 0:
+            messagebox.showerror("Error", "Seleccione estudiante y curso")
+            return
+        
+        estudiantes = listar_estudiantes()
+        cursos = listar_cursos(estado='activo')
+        
+        result = inscribir_estudiante(
+            id_estudiante=estudiantes[est_idx]['id_estudiante'],
+            id_curso=cursos[cur_idx]['id_curso'],
+            tiene_pdf_cedula=self.pdf_var.get(),
+            tiene_pago=self.pago_var.get()
+        )
+        
+        if result['exito']:
+            messagebox.showinfo("Éxito", result['mensaje'])
+            self.result = True
+            self.window.destroy()
+        else:
+            messagebox.showerror("Error", result['error'])
+
+
+# =============================================================================
+# VENTANA: CERTIFICADOS
+# =============================================================================
+
+class VentanaCertificados:
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("🏆 Gestión de Certificados")
+        self.window.geometry("950x550")
+        
+        main_frame = tk.Frame(self.window, bg='#f5f5f5')
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        tk.Label(main_frame, text="🏆 GESTIÓN DE CERTIFICADOS",
+                font=('Helvetica', 14, 'bold'), bg='#f5f5f5').pack(pady=10)
+        
+        btn_frame = tk.Frame(main_frame, bg='#f5f5f5')
+        btn_frame.pack(fill='x', pady=5)
+        
+        tk.Button(btn_frame, text="➕ Generar Certificado", command=self.generar_certificado,
+                  bg='#4caf50', fg='white').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="🔄 Actualizar", command=self.cargar_datos,
+                  bg='#2196f3', fg='white').pack(side='left', padx=5)
+        
+        columns = ('ID', 'Estudiante', 'Cédula', 'Curso', 'N° Certificado', 'Fecha', 'Estado', 'Calif.')
+        self.tree = ttk.Treeview(main_frame, columns=columns, show='headings', height=18)
+        
+        for col in columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=80 if col not in ['Estudiante', 'Curso', 'N° Certificado'] else 130)
+        
+        scrollbar = ttk.Scrollbar(main_frame, orient='vertical', command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        self.cargar_datos()
+    
+    def cargar_datos(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        for cert in listar_certificaciones():
+            self.tree.insert('', 'end', values=(
+                cert['id_certificacion'], cert['nombre_estudiante'], cert['identificacion'],
+                cert['nombre_curso'], cert['numero_certificado'],
+                str(cert['fecha_emision'])[:10] if cert['fecha_emision'] else '',
+                cert['estado'], cert['calificacion'] or '-'
+            ))
+    
+    def generar_certificado(self):
+        form = FormularioCertificado(self.window)
+        if form.result:
+            self.cargar_datos()
+
+
+class FormularioCertificado:
+    def __init__(self, parent):
+        self.result = None
+        self.window = tk.Toplevel(parent)
+        self.window.title("➕ Generar Certificado")
+        self.window.geometry("350x200")
+        self.window.transient(parent)
+        self.window.grab_set()
+        
+        main_frame = tk.Frame(self.window, padx=20, pady=20)
+        main_frame.pack(fill='both', expand=True)
+        
+        tk.Label(main_frame, text="Inscripción:").grid(row=0, column=0, sticky='w', pady=5)
+        self.inscripcion_combo = ttk.Combobox(main_frame, width=30)
+        inscripciones = listar_inscripciones(estado='inscrito')
+        self.inscripcion_combo['values'] = [f"{i['nombre_estudiante']} - {i['nombre_curso']}" for i in inscripciones]
+        self.inscripcion_combo.grid(row=0, column=1, pady=5)
+        
+        tk.Label(main_frame, text="Calificación (0-100):").grid(row=1, column=0, sticky='w', pady=5)
+        self.calif_spin = tk.Spinbox(main_frame, from_=0, to=100, width=28)
+        self.calif_spin.set(80)
+        self.calif_spin.grid(row=1, column=1, pady=5)
+        
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.grid(row=2, columnspan=2, pady=15)
+        
+        tk.Button(btn_frame, text="✅ Generar", command=self.guardar,
+                  bg='#4caf50', fg='white').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="❌ Cancelar", command=self.window.destroy,
+                  bg='#f44336', fg='white').pack(side='left', padx=5)
+    
+    def guardar(self):
+        idx = self.inscripcion_combo.current()
+        if idx < 0:
+            messagebox.showerror("Error", "Seleccione una inscripción")
+            return
+        
+        try:
+            calif = float(self.calif_spin.get())
+        except ValueError:
+            messagebox.showerror("Error", "Calificación inválida")
+            return
+        
+        inscripciones = listar_inscripciones(estado='inscrito')
+        result = generar_certificado(
+            id_inscripcion=inscripciones[idx]['id_inscripcion'],
+            calificacion=calif
+        )
+        
+        if result['exito']:
+            messagebox.showinfo("Éxito", f"{result['mensaje']}\n\nCertificado: {result['numero_certificado']}\nPDF: {result['pdf_path']}")
+            self.result = True
+            self.window.destroy()
+        else:
+            messagebox.showerror("Error", result['error'])
+
+
+# =============================================================================
+# VENTANA: REPORTES
+# =============================================================================
+
+class VentanaReportes:
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("📊 Reportes y Estadísticas")
+        self.window.geometry("700x500")
+        
+        main_frame = tk.Frame(self.window, bg='#f5f5f5')
+        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        tk.Label(main_frame, text="📊 ESTADÍSTICAS DEL SISTEMA",
+                font=('Helvetica', 16, 'bold'), bg='#f5f5f5').pack(pady=10)
+        
+        # Frame de estadísticas
+        stats_frame = tk.LabelFrame(main_frame, text="Resumen General", font=('Helvetica', 11, 'bold'), padx=10, pady=10)
+        stats_frame.pack(fill='x', pady=10)
+        
+        self.stats_text = tk.Text(stats_frame, height=8, width=60, font=('Courier', 10), bg='white')
+        self.stats_text.pack(fill='x')
+        
+        tk.Button(main_frame, text="🔄 Actualizar", command=self.cargar_estadisticas,
+                  bg='#2196f3', fg='white', font=('Helvetica', 10)).pack(pady=10)
+        
+        # Cursos populares
+        cursos_frame = tk.LabelFrame(main_frame, text="Cursos con más inscripciones", font=('Helvetica', 11, 'bold'), padx=10, pady=10)
+        cursos_frame.pack(fill='x', pady=10)
+        
+        self.cursos_text = tk.Text(cursos_frame, height=5, width=60, font=('Courier', 10), bg='white')
+        self.cursos_text.pack(fill='x')
+        
+        self.cargar_estadisticas()
+    
+    def cargar_estadisticas(self):
+        stats = obtener_estadisticas()
+        
+        texto = f"""
+   Total Estudiantes:     {stats['total_estudiantes']}
+   Total Docentes:       {stats['total_docentes']}
+   Total Cursos:         {stats['total_cursos']}
+   Total Inscripciones:  {stats['total_inscripciones']}
+   Certificados:         {stats['total_certificados']}
+        """
+        self.stats_text.delete('1.0', 'end')
+        self.stats_text.insert('1.0', texto)
+        
+        cursos_texto = "   Curso                              Inscripciones\n"
+        cursos_texto += "   " + "-" * 50 + "\n"
+        for curso in stats['cursos_populares']:
+            cursos_texto += f"   {curso['nombre'][:35]:<35} {curso['total']}\n"
+        
+        self.cursos_text.delete('1.0', 'end')
+        self.cursos_text.insert('1.0', cursos_texto)
+
 
 # =============================================================================
 # PUNTO DE ENTRADA
 # =============================================================================
 
+def main():
+    """Función principal."""
+    root = tk.Tk()
+    app = ABACOMGUI(root)
+    root.mainloop()
+
+
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = ABACOMGUI()
-    window.show()
-    sys.exit(app.exec_())
+    main()

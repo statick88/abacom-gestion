@@ -1,14 +1,18 @@
 """
 Test end-to-end del sistema ABACOM
 """
+import os
 import sys
-sys.path.insert(0, '/Users/statick/dev/apps/abacom/course_of_python/abacom-gestion')
+
+# Cambiar al directorio del proyecto
+os.chdir('/Users/statick/dev/apps/abacom-gestion')
+sys.path.insert(0, '/Users/statick/dev/apps/abacom-gestion')
 
 from models.database import ejecutar_modificacion
 
 # Cleanup before test
 print("Limpiando datos de prueba...")
-tables = ['certificaciones', 'inscripciones', 'estudiantes', 'cursos']
+tables = ['certificados', 'inscripciones', 'estudiantes', 'cursos']
 for table in tables:
     try:
         ejecutar_modificacion(f'DELETE FROM {table}')

@@ -400,8 +400,13 @@ class AplicacionConsola:
         """Menú de reportes"""
         menu = MenuConsola()
         menu.titulo = "REPORTES"
-        menu.agregar_opcion("1", "Ver Notificaciones (30 min antes)", self._reporte_notificaciones)
-        menu.agregar_opcion("2", "Estadísticas del Sistema", self._reporte_estadisticas)
+        menu.agregar_opcion("1", "Estadísticas del Sistema", self._reporte_estadisticas)
+        menu.agregar_opcion("2", "Ver Notificaciones (30 min antes)", self._reporte_notificaciones)
+        menu.agregar_opcion("3", "Exportar Estudiantes CSV", self._exportar_estudiantes)
+        menu.agregar_opcion("4", "Exportar Cursos CSV", self._exportar_cursos)
+        menu.agregar_opcion("5", "Exportar Inscripciones CSV", self._exportar_inscripciones)
+        menu.agregar_opcion("6", "Buscar Estudiante", self._buscar_estudiante)
+        menu.agregar_opcion("7", "Buscar Curso", self._buscar_curso)
 
         while True:
             menu.mostrar()
@@ -409,6 +414,25 @@ class AplicacionConsola:
             if opcion == "0":
                 break
             menu.ejecutar(opcion)
+
+    def _reporte_estadisticas(self):
+        """Muestra estadísticas completas del sistema."""
+        from services.servicios import obtener_estadisticas
+        
+        print("\n📊 ESTADÍSTICAS DEL SISTEMA")
+        print("=" * 50)
+        
+        stats = obtener_estadisticas()
+        
+        print(f"   📚 Total Estudiantes: {stats['total_estudiantes']}")
+        print(f"   👨‍🏫 Total Docentes: {stats['total_docentes']}")
+        print(f"   📖 Total Cursos: {stats['total_cursos']}")
+        print(f"   📝 Total Inscripciones: {stats['total_inscripciones']}")
+        print(f"   🏆 Certificados Emitidos: {stats['total_certificados']}")
+        
+        print("\n   📈 Cursos con más inscripciones:")
+        for curso in stats['cursos_populares']:
+            print(f"      - {curso['nombre']}: {curso['total']}")
 
     def _reporte_notificaciones(self):
         print("\n📅 REPORTE DE NOTIFICACIONES")
@@ -419,15 +443,103 @@ class AplicacionConsola:
         print(f"   → Notificación se envía a las: {calcular_hora_notificacion('19:00')}")
         print("\nEl sistema generará automáticamente las notificaciones")
 
-    def _reporte_estadisticas(self):
-        print("\n📊 ESTADÍSTICAS DEL SISTEMA")
-        print("-" * 40)
+    def _exportar_estudents(self):
+        """Exporta estudiantes a CSV."""
+        from services.servicios import exportar_estudiantes_csv
+        
+        csv = exportar_estudiantes_csv()
+        filename = f"export_estudiantes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        with open(filename, 'w') as f:
+            f.write(csv)
+        
+        print(f"\n✅ Estudiantes exportados a: {filename}")
 
-        est = listar_estudiantes()
-        cur = listar_cursos()
+    def _exportar_estudiantes(self):
+        """Exporta estudiantes a CSV."""
+        from services.servicios import exportar_estudiantes_csv
+        
+        csv = exportar_estudiantes_csv()
+        filename = f"export_estudiantes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        with open(filename, 'w') as f:
+            f.write(csv)
+        
+        print(f"\n✅ Estudiantes exportados a: {filename}")
 
-        print(f"   Total Estudiantes: {len(est)}")
-        print(f"   Total Cursos: {len(cur)}")
+    def _exportar_cursos(self):
+        """Exporta cursos a CSV."""
+        from services.servicios import exportar_cursos_csv
+        
+        csv = exportar_cursos_csv()
+        filename = f"export_cursos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        with open(filename, 'w') as f:
+            f.write(csv)
+        
+        print(f"\n✅ Cursos exportados a: {filename}")
+
+    def _exportar_inscripciones(self):
+        """Exporta inscripciones a CSV."""
+        from services.servicios import exportar_inscripciones_csv
+        
+        csv = exportar_inscripciones_csv()
+        filename = f"export_inscripciones_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        with open(filename, 'w') as f:
+            f.write(csv)
+        
+        print(f"\n✅ Inscripciones exportadas a: {filename}")
+
+    def _buscar_estudiante(self):
+        """Busca estudiantes por texto."""
+        from services.servicios import buscar_estudiantes
+        
+        texto = input("\n🔍 Buscar estudiante (nombre, cédula, correo): ").strip()
+        
+        if not texto:
+            print("\n❌ Ingrese un término de búsqueda")
+            return
+        
+        resultados = buscar_estudiantes(texto)
+        
+        if not resultados:
+            print("\n❌ No se encontraron resultados")
+            return
+        
+        print(f"\n📋 Se encontraron {len(resultados)} resultados:")
+        print("-" * 80)
+        print(f"{'ID':<4} | {'Nombres':<25} | {'Cédula':<12} | {'Celular':<12}")
+        print("-" * 80)
+        
+        for e in resultados:
+            print(f"{e['id_estudiante']:<4} | {e['nombres_completos'][:25]:<25} | "
+                  f"{e['identificacion']:<12} | {e['celular']:<12}")
+
+    def _buscar_curso(self):
+        """Busca cursos por texto."""
+        from services.servicios import buscar_cursos
+        
+        texto = input("\n🔍 Buscar curso (nombre, código): ").strip()
+        
+        if not texto:
+            print("\n❌ Ingrese un término de búsqueda")
+            return
+        
+        resultados = buscar_cursos(texto)
+        
+        if not resultados:
+            print("\n❌ No se encontraron resultados")
+            return
+        
+        print(f"\n📋 Se encontraron {len(resultados)} resultados:")
+        print("-" * 70)
+        print(f"{'Código':<8} | {'Nombre':<25} | {'Inicio':<12} | {'Estado':<10}")
+        print("-" * 70)
+        
+        for c in resultados:
+            print(f"{c['codigo']:<8} | {c['nombre'][:25]:<25} | "
+                  f"{c['fecha_inicio']:<12} | {c['estado']:<10}")
 
 
 # =============================================================================
