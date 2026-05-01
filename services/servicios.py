@@ -1129,5 +1129,336 @@ def buscar_cursos(texto: str, db_path: str = DB_PATH) -> List[Dict]:
 
 
 # =============================================================================
+# SERVICIO: AUTENTICACIÓN Y USUARIOS
+# =============================================================================
+
+import hashlib
+import secrets
+import bcrypt
+import time
+from datetime import datetime
+import os
+
+# =============================================================================
+# LOGGING DE AUDITORÍA
+# =============================================================================
+
+def log_auditoria(usuario: str, accion: str, detalle: str = ""):
+    """Registra eventos de auditoría en archivo de log."""
+    try:
+        log_dir = Path(__file__).parent.parent / 'logs'
+        log_dir.mkdir(exist_ok=True)
+        log_file = log_dir / 'auditoria.log'
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ip = "127.0.0.1"  # Desktop app, IP local
+        
+        log_entry = f"[{timestamp}] {ip} | {usuario} | {accion} | {detalle}\n"
+        
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+    except:
+        pass  # No fallar si no se puede escribir el log
+
+
+# =============================================================================
+# RATE LIMITING
+# =============================================================================
+
+class RateLimiter:
+    """Limitador de intentos de autenticación."""
+    
+    def __init__(self, max_attempts: int = 5, lockout_seconds: int = 300):
+        self.max_attempts = max_attempts
+        self.lockout_seconds = lockout_seconds
+        self._attempts = {}  # usuario -> (count, lockout_until)
+    
+    def is_locked(self, usuario: str) -> bool:
+        """Verifica si el usuario está bloqueado."""
+        if usuario not in self._attempts:
+            return False
+        
+        count, lockout_until = self._attempts[usuario]
+        if count >= self.max_attempts:
+            if time.time() < lockout_until:
+                return True
+            else:
+                # Reset después del lockout
+                del self._attempts[usuario]
+        return False
+    
+    def record_failure(self, usuario: str):
+        """Registra un intento fallido."""
+        current = self._attempts.get(usuario, (0, 0))[0] + 1
+        if current >= self.max_attempts:
+            lockout_until = time.time() + self.lockout_seconds
+            self._attempts[usuario] = (current, lockout_until)
+        else:
+            self._attempts[usuario] = (current, 0)
+    
+    def record_success(self, usuario: str):
+        """Resetea intentos después de login exitoso."""
+        if usuario in self._attempts:
+            del self._attempts[usuario]
+    
+    def remaining_attempts(self, usuario: str) -> int:
+        """Cantidad de intentos restantes."""
+        count = self._attempts.get(usuario, (0,))[0]
+        return max(0, self.max_attempts - count)
+
+
+# Instancia global
+auth_limiter = RateLimiter(max_attempts=5, lockout_seconds=300)
+
+
+def validar_email_formato(email: str) -> bool:
+    """Valida formato de email con expresión regular."""
+    if not email or not isinstance(email, str):
+        return False
+    
+    # Patrón completo de validación
+    patron = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(patron, email.strip()) is not None
+
+
+def validar_password(password: str) -> tuple[bool, str]:
+    """
+    Valida que la contraseña cumpla requisitos.
+    Returns: (es_valida, mensaje_error)
+    """
+    if not password:
+        return False, "La contraseña no puede estar vacía"
+    
+    if len(password) < 8:
+        return False, "La contraseña debe tener al menos 8 caracteres"
+    
+    return True, ""
+
+
+def hash_password(password: str) -> str:
+    """Genera hash seguro con bcrypt."""
+    # Usar bcrypt con work factor 12 (recomendado para producción)
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verifica contraseña contra hash bcrypt."""
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+    except:
+        return False
+
+
+def registrar_usuario(
+    usuario: str,
+    email: str,
+    password: str,
+    nombres: str,
+    rol: str = "estudiante",
+    db_path: str = DB_PATH
+) -> dict:
+    """
+    Registra un nuevo usuario en el sistema.
+    
+    Args:
+        usuario: Nombre de usuario (único)
+        email: Correo electrónico (único)
+        password: Contraseña (mínimo 8 caracteres)
+        nombres: Nombres completos
+        rol: admin, docente, estudiante
+    
+    Returns:
+        dict con exito, mensaje, id_usuario
+    """
+    from models.database import ejecutar_consulta, ejecutar_modificacion
+    
+    # Validaciones
+    if not usuario or not email or not password or not nombres:
+        return {"exito": False, "error": "Todos los campos son requeridos"}
+    
+    if not validar_email_formato(email):
+        return {"exito": False, "error": "Formato de correo electrónico inválido"}
+    
+    valido, mensaje = validar_password(password)
+    if not valido:
+        return {"exito": False, "error": mensaje}
+    
+    if rol not in ['admin', 'docente', 'estudiante']:
+        return {"exito": False, "error": "Rol inválido"}
+    
+    # Verificar si usuario o email ya existen
+    existe = ejecutar_consulta(
+        "SELECT id_usuario FROM usuarios WHERE usuario = ? OR email = ?",
+        (usuario, email)
+    )
+    if existe:
+        return {"exito": False, "error": "El usuario o correo ya está registrado"}
+    
+    # Crear hash y registrar
+    password_hash = hash_password(password)
+    
+    try:
+        result = ejecutar_modificacion(
+            """INSERT INTO usuarios (usuario, email, password_hash, nombres, rol, estado)
+               VALUES (?, ?, ?, ?, ?, 'activo')""",
+            (usuario, email, password_hash, nombres, rol)
+        )
+        
+        return {
+            "exito": True,
+            "mensaje": f"Usuario {usuario} registrado exitosamente",
+            "id_usuario": result.get("last_row_id")
+        }
+    except Exception as e:
+        return {"exito": False, "error": str(e)}
+
+
+def iniciar_sesion(
+    usuario_o_email: str,
+    password: str,
+    db_path: str = DB_PATH
+) -> dict:
+    """
+    Inicia sesión verificando credenciales con rate limiting.
+    
+    Args:
+        usuario_o_email: Usuario o correo electrónico
+        password: Contraseña
+    
+    Returns:
+        dict con exito, mensaje, usuario_data
+    """
+    from models.database import ejecutar_consulta, ejecutar_modificacion
+    
+    if not usuario_o_email or not password:
+        return {"exito": False, "error": "Usuario y contraseña requeridos"}
+    
+    # Verificar rate limiting (por nombre de usuario o email)
+    usuario_normalized = usuario_o_email.lower().strip()
+    if auth_limiter.is_locked(usuario_normalized):
+        log_auditoria(usuario_normalized, "LOGIN_LOCKED", "Demasiados intentos fallidos")
+        return {"exito": False, "error": f"Cuenta bloqueada. Intenta en {auth_limiter.lockout_seconds//60} minutos"}
+    
+    # Buscar usuario por usuario o email
+    query = """SELECT id_usuario, usuario, email, nombres, password_hash, rol, estado 
+               FROM usuarios WHERE usuario = ? OR email = ?"""
+    resultados = ejecutar_consulta(query, (usuario_o_email, usuario_o_email))
+    
+    if not resultados:
+        # Usuario no existe - registrar intento para evitar enumeração
+        auth_limiter.record_failure(usuario_normalized)
+        log_auditoria(usuario_normalized, "LOGIN_FAIL", "Usuario no encontrado")
+        return {"exito": False, "error": "Credenciales incorrectas"}
+    
+    usuario = resultados[0]
+    
+    # Verificar estado
+    if usuario['estado'] != 'activo':
+        log_auditoria(usuario['usuario'], "LOGIN_FAIL", f"Usuario {usuario['estado']}")
+        return {"exito": False, "error": f"Usuario {usuario['estado'].lower()}"}
+    
+    # Verificar contraseña
+    if not verify_password(password, usuario['password_hash']):
+        auth_limiter.record_failure(usuario_normalized)
+        remaining = auth_limiter.remaining_attempts(usuario_normalized)
+        log_auditoria(usuario['usuario'], "LOGIN_FAIL", f"Password incorrecta. Intentos restantes: {remaining}")
+        return {"exito": False, "error": f"Credenciales incorrectas. Te quedan {remaining} intentos"}
+    
+    # Login exitoso - resetear intentos y registrar
+    auth_limiter.record_success(usuario_normalized)
+    log_auditoria(usuario['usuario'], "LOGIN_SUCCESS", "Inicio de sesión exitoso")
+    
+    # Actualizar último login
+    try:
+        ejecutar_modificacion(
+            "UPDATE usuarios SET ultimo_login = CURRENT_TIMESTAMP WHERE id_usuario = ?",
+            (usuario['id_usuario'],)
+        )
+    except:
+        pass
+    
+    # Devolver datos (sin password_hash)
+    return {
+        "exito": True,
+        "mensaje": f"Bienvenido, {usuario['nombres']}",
+        "usuario": {
+            "id": usuario['id_usuario'],
+            "usuario": usuario['usuario'],
+            "email": usuario['email'],
+            "nombres": usuario['nombres'],
+            "rol": usuario['rol']
+        }
+    }
+
+
+def obtener_usuario_por_id(id_usuario: int, db_path: str = DB_PATH) -> Optional[dict]:
+    """Obtiene datos de usuario por ID."""
+    from models.database import ejecutar_consulta
+    
+    query = "SELECT id_usuario, usuario, email, nombres, rol, estado FROM usuarios WHERE id_usuario = ?"
+    resultados = ejecutar_consulta(query, (id_usuario,))
+    
+    return resultados[0] if resultados else None
+
+
+def listar_usuarios(db_path: str = DB_PATH) -> List[Dict]:
+    """Lista todos los usuarios."""
+    from models.database import ejecutar_consulta
+    
+    query = "SELECT id_usuario, usuario, email, nombres, rol, estado, ultimo_login, fecha_registro FROM usuarios ORDER BY fecha_registro DESC"
+    return ejecutar_consulta(query)
+
+
+def crear_admin_default():
+    """Crea el usuario admin por defecto si no existe.
+    
+    SEGURIDAD: La contraseña se obtiene de变量 de entorno ABACOM_ADMIN_PASSWORD
+    o se genera aleatoriamente si no está configurada.
+    """
+    import os
+    from models.database import ejecutar_consulta
+    
+    existe = ejecutar_consulta("SELECT id_usuario FROM usuarios WHERE rol = 'admin'")
+    
+    if not existe:
+        # Obtener contraseña de variable de entorno o generar aleatoria
+        admin_password = os.environ.get('ABACOM_ADMIN_PASSWORD')
+        
+        if not admin_password:
+            # Generar contraseña aleatoria segura
+            admin_password = secrets.token_urlsafe(12)
+            print(f"⚠️ ADVERTENCIA: No se encontró ABACOM_ADMIN_PASSWORD")
+            print(f"   Contraseña generada: {admin_password}")
+            print(f"   Establece la variable para usar una contraseña fija:")
+            print(f"   export ABACOM_ADMIN_PASSWORD='tu-contraseña-segura'")
+        else:
+            print(f"✅ Usando contraseña de ABACOM_ADMIN_PASSWORD")
+        
+        result = registrar_usuario(
+            usuario="statick",
+            email="dsaavedra88@gmail.com",
+            password=admin_password,
+            nombres="Diego Medardo Saavedra García",
+            rol="admin"
+        )
+        if result['exito']:
+            print(f"✅ Usuario admin creado: statick")
+        else:
+            print(f"⚠️ Error creando admin: {result['error']}")
+
+
+# No inicializar automáticamente en producción por seguridad
+# Solo ejecutar si se establece variable de entorno
+import os
+if os.environ.get('ABACOM_INITIALIZE_ADMIN', '').lower() == 'true':
+    try:
+        crear_admin_default()
+    except:
+        pass
+
+
+# =============================================================================
 # END OF FILE
 # =============================================================================

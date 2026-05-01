@@ -42,19 +42,16 @@ def main():
         console_main()
         
     elif opcion == "2":
-        # GUI
-        print("\n🚀 Iniciando interfaz gráfica...")
+        # GUI - tkinter (built-in, no requiere instalación)
+        print("\n🚀 Iniciando interfaz gráfica (tkinter)...")
         try:
-            from PyQt5.QtWidgets import QApplication
-            from gui.app import ABACOMGUI
-            
-            app = QApplication(sys.argv)
-            window = ABACOMGUI()
-            window.show()
-            sys.exit(app.exec_())
-        except ImportError:
-            print("\n❌ Error: PyQt5 no está instalado.")
-            print("   Instale con: pip install PyQt5")
+            from gui.app import main as gui_main
+            gui_main()
+        except Exception as e:
+            print(f"\n❌ Error al iniciar GUI: {e}")
+            print("   Asegúrese de tener python-tk instalado (brew install python-tk)")
+            import traceback
+            traceback.print_exc()
             
     elif opcion == "3":
         # Web

@@ -3,6 +3,7 @@
 
 # Core
 reportlab>=4.4.0  # PDF generation
+bcrypt>=4.3.0    # Password hashing
 
 # Testing
 pytest>=9.0.0

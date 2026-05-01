@@ -153,6 +153,25 @@ CREATE TABLE IF NOT EXISTS aulas_virtuales (
 );
 
 -- ============================================================================
+-- TABLA: usuarios
+-- ============================================================================
+-- Sistema de autenticación y control de acceso
+
+CREATE TABLE IF NOT EXISTS usuarios (
+    id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    nombres TEXT NOT NULL,
+    rol TEXT DEFAULT 'estudiante' CHECK(rol IN ('admin', 'docente', 'estudiante')),
+    estado TEXT DEFAULT 'activo' CHECK(estado IN ('activo', 'inactivo', 'suspendido')),
+    ultimo_login TIMESTAMP,
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(usuario),
+    UNIQUE(email)
+);
+
+-- ============================================================================
 -- TABLA: configuration
 -- ============================================================================
 -- Configuración general del sistema
