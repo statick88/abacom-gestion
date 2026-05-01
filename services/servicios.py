@@ -1309,7 +1309,7 @@ def registrar_usuario(
         return {
             "exito": True,
             "mensaje": f"Usuario {usuario} registrado exitosamente",
-            "id_usuario": result.get("last_row_id")
+            "id_usuario": result
         }
     except Exception as e:
         return {"exito": False, "error": str(e)}
