@@ -1,0 +1,93 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class*
+*.so*
+.Python*
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg*
+*.egg*
+
+# Virtual Environment
+venv/
+ENV/
+.env/
+.conda/
+
+# IDE
+.vscode/
+.idea/
+*.swp*
+*.swo*
+*~*
+
+# OS
+.DS_Store*
+Thumbs.db*
+
+# Quarto
+_quarto/
+*.qmd-files*
+*.html*
+!q10/unidades/*.html*
+*.pdf*
+*.epub*
+output/
+
+# Logs
+*.log*
+
+# Environment variables
+.env*
+.env.*
+
+# Jupyter
+.ipynb_checkpoints*
+*.ipynb*
+
+# Testing
+.coverage*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.pytest_cache/
+
+# Dependencies
+node_modules/
+package-lock.json*
+yarn.lock*
+pnpm-lock.yaml*
+
+# Misc
+*.backup*
+*.bak*
+*.tmp*
+*.temp*
+cache/
+logs/
+*.msi*
+*.exe*
+*.dll*
+*.class*/
+.quarto/
+
+# Database
+*.db*
+!database/schema.sql
+
+# PDFs (generated)
+pdfs/
