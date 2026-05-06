@@ -11,7 +11,6 @@ Instituto: ABACOM
 
 import os
 import sys
-from datetime import datetime
 
 # Agregar el directorio raíz al path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,34 +29,15 @@ from services.servicios import (
     validar_inscripcion
 )
 
-
-class MenuConsola:
-    """Gestor de menús para la aplicación de consola"""
-
-    def __init__(self):
-        self.opciones = {}
-        self.titulo = ""
-
-    def agregar_opcion(self, numero: str, texto: str, funcion):
-        self.opciones[numero] = {"texto": texto, "funcion": funcion}
-
-    def mostrar(self):
-        print(f"\n{'='*50}")
-        print(f"  {self.titulo}")
-        print('='*50)
-        for num, op in self.opciones.items():
-            print(f"  {num}. {op['texto']}")
-        print("  0. Volver al menú principal")
-        print('='*50)
-
-    def ejecutar(self, opcion: str):
-        if opcion in self.opciones:
-            return self.opciones[opcion]["funcion"]()
-        elif opcion == "0":
-            return True
-        else:
-            print("\n❌ Opción inválida")
-            return False
+from ui.menu import MenuConsola
+from ui.handlers import MenuBuilder
+from validators.input_helpers import (
+    validar_cedula_input,
+    validar_numero_input,
+    validar_sino_input
+)
+from formatters.table_formatter import TableFormatter
+from formatters.data_formatter import DataFormatter
 
 
 class AplicacionConsola:
@@ -65,8 +45,9 @@ class AplicacionConsola:
 
     def __init__(self):
         self.db_path = DB_PATH
-        self.menus = {}
         self.menu_principal = None
+        self._table_formatter = TableFormatter()
+        self._data_formatter = DataFormatter()
 
     def iniciar(self):
         """Inicia la aplicación"""
@@ -75,15 +56,7 @@ class AplicacionConsola:
 
     def _construir_menus(self):
         """Construye los menús de la aplicación"""
-
-        # Menú Principal
-        self.menu_principal = MenuConsola()
-        self.menu_principal.titulo = "SISTEMA DE GESTIÓN ABACOM"
-        self.menu_principal.agregar_opcion("1", "Gestionar Estudiantes", self.menu_estudiantes)
-        self.menu_principal.agregar_opcion("2", "Gestionar Cursos", self.menu_cursos)
-        self.menu_principal.agregar_opcion("3", "Gestionar Inscripciones", self.menu_inscripciones)
-        self.menu_principal.agregar_opcion("4", "Generar Certificados", self.menu_certificados)
-        self.menu_principal.agregar_opcion("5", "Reportes", self.menu_reportes)
+        self.menu_principal = MenuBuilder.build_main_menu(self)
 
     def _ejecutar_menu_principal(self):
         """Ejecuta el menú principal en bucle"""
@@ -100,11 +73,7 @@ class AplicacionConsola:
     # -------------------------------------------------------------------------
     def menu_estudiantes(self):
         """Menú de gestión de estudiantes"""
-        menu = MenuConsola()
-        menu.titulo = "GESTIÓN DE ESTUDIANTES"
-        menu.agregar_opcion("1", "Registrar Estudiante", self._registrar_estudiante)
-        menu.agregar_opcion("2", "Buscar por Cédula", self._buscar_estudiante)
-        menu.agregar_opcion("3", "Listar Estudiantes", self._listar_estudiantes)
+        menu = MenuBuilder.build_students_menu(self)
 
         while True:
             menu.mostrar()
@@ -114,29 +83,28 @@ class AplicacionConsola:
             menu.ejecutar(opcion)
 
     def _registrar_estudiante(self):
-        print("\n📝 REGISTRO DE ESTUDIANTE")
-        print("-" * 40)
+        self._data_formatter.mostrar_encabezado("📝 REGISTRO DE ESTUDIANTE")
 
         # Validar cédula primero
         cedula = input("Cédula de Identidad (10 dígitos): ").strip()
-        if not validar_cedula_ecuador(cedula):
-            print("\n❌ Cédula inválida. Debe tener 10 dígitos.")
+        if not validar_cedula_input(cedula):
+            self._data_formatter.mostrar_error("Cédula inválida. Debe tener 10 dígitos.")
             return
 
         nombres = input("Nombres Completos: ").strip()
         if not nombres:
-            print("\n❌ Error: Nombres son requeridos")
+            self._data_formatter.mostrar_error("Nombres son requeridos")
             return
 
         telefono = input("Teléfono Fijo (opcional): ").strip()
         celular = input("Celular: ").strip()
         if not celular:
-            print("\n❌ Error: Celular es requerido")
+            self._data_formatter.mostrar_error("Celular es requerido")
             return
 
         correo = input("Correo Electrónico: ").strip()
         if not correo:
-            print("\n❌ Error: Correo es requerido")
+            self._data_formatter.mostrar_error("Correo es requerido")
             return
 
         # Registrar
@@ -149,57 +117,39 @@ class AplicacionConsola:
         )
 
         if resultado["exito"]:
-            print(f"\n✅ {resultado['mensaje']}")
-            print(f"   ID Estudiante: {resultado['id_estudiante']}")
+            self._data_formatter.mostrar_exito(
+                resultado['mensaje'],
+                {"ID Estudiante": resultado['id_estudiante']}
+            )
         else:
-            print(f"\n❌ {resultado['error']}")
+            self._data_formatter.mostrar_error(resultado['error'])
 
     def _buscar_estudiante(self):
         print("\n🔍 BUSCAR ESTUDIANTE POR CÉDULA")
         cedula = input("Ingrese la cédula: ").strip()
 
-        if not validar_cedula_ecuador(cedula):
-            print("\n❌ Formato de cédula inválido")
+        if not validar_cedula_input(cedula):
+            self._data_formatter.mostrar_error("Formato de cédula inválido")
             return
 
         estudiante = obtener_estudiante_por_cedula(cedula)
 
         if estudiante:
-            print("\n✅ ESTUDIANTE ENCONTRADO:")
-            print(f"   ID: {estudiante['id_estudiante']}")
-            print(f"   Nombres: {estudiante['nombres_completos']}")
-            print(f"   Cédula: {estudiante['identificacion']}")
-            print(f"   Celular: {estudiante['celular']}")
-            print(f"   Correo: {estudiante['correo_electronico']}")
+            self._data_formatter.mostrar_estudiante(estudiante)
         else:
-            print("\n❌ Estudiante no encontrado")
+            self._data_formatter.mostrar_error("Estudiante no encontrado")
 
     def _listar_estudiantes(self):
-        print("\n📋 LISTADO DE ESTUDIANTES")
-        print("-" * 60)
-
+        self._data_formatter.mostrar_encabezado("📋 LISTADO DE ESTUDIANTES", 60)
         estudiantes = listar_estudiantes()
-
-        if not estudiantes:
-            print("No hay estudiantes registrados")
-            return
-
-        print(f"{'ID':<4} | {'Nombres':<25} | {'Cédula':<12} | {'Celular':<12}")
-        print("-" * 60)
-
-        for e in estudiantes:
-            print(f"{e['id_estudiante']:<4} | {e['nombres_completos'][:25]:<25} | "
-                  f"{e['identificacion']:<12} | {e['celular']:<12}")
+        self._table_formatter.format_estudiantes(estudiantes)
 
     # -------------------------------------------------------------------------
     # MENÚ CURSOS
     # -------------------------------------------------------------------------
     def menu_cursos(self):
         """Menú de gestión de cursos"""
-        menu = MenuConsola()
-        menu.titulo = "GESTIÓN DE CURSOS"
-        menu.agregar_opcion("1", "Registrar Curso", self._registrar_curso)
-        menu.agregar_opcion("2", "Listar Cursos", self._listar_cursos)
+        menu = MenuBuilder.build_courses_menu(self)
 
         while True:
             menu.mostrar()
@@ -209,8 +159,7 @@ class AplicacionConsola:
             menu.ejecutar(opcion)
 
     def _registrar_curso(self):
-        print("\n📝 REGISTRO DE CURSO")
-        print("-" * 40)
+        self._data_formatter.mostrar_encabezado("📝 REGISTRO DE CURSO")
 
         codigo = input("Código (ej. 01): ").strip()
         nombre = input("Nombre del Curso: ").strip()
@@ -244,37 +193,24 @@ class AplicacionConsola:
         )
 
         if resultado["exito"]:
-            print(f"\n✅ {resultado['mensaje']}")
-            print(f"   Duración: {resultado['duracion_semanas']} semanas")
+            self._data_formatter.mostrar_exito(
+                resultado['mensaje'],
+                {"Duración": f"{resultado['duracion_semanas']} semanas"}
+            )
         else:
-            print(f"\n❌ {resultado['error']}")
+            self._data_formatter.mostrar_error(resultado['error'])
 
     def _listar_cursos(self):
-        print("\n📋 LISTADO DE CURSOS")
-        print("-" * 70)
-
+        self._data_formatter.mostrar_encabezado("📋 LISTADO DE CURSOS", 70)
         cursos = listar_cursos()
-
-        if not cursos:
-            print("No hay cursos registrados")
-            return
-
-        print(f"{'Código':<6} | {'Nombre':<25} | {'Inicio':<12} | {'Estado':<10}")
-        print("-" * 70)
-
-        for c in cursos:
-            print(f"{c['codigo']:<6} | {c['nombre'][:25]:<25} | "
-                  f"{c['fecha_inicio']:<12} | {c['estado']:<10}")
+        self._table_formatter.format_cursos(cursos)
 
     # -------------------------------------------------------------------------
     # MENÚ INSCRIPCIONES
     # -------------------------------------------------------------------------
     def menu_inscripciones(self):
         """Menú de inscripciones"""
-        menu = MenuConsola()
-        menu.titulo = "INSCRIPCIONES"
-        menu.agregar_opcion("1", "Inscribir Estudiante", self._inscribir_estudiante)
-        menu.agregar_opcion("2", "Validar Requisitos", self._validar_requisitos)
+        menu = MenuBuilder.build_enrollments_menu(self)
 
         while True:
             menu.mostrar()
@@ -290,7 +226,7 @@ class AplicacionConsola:
             id_est = int(input("ID del Estudiante: ").strip())
             id_cur = int(input("ID del Curso: ").strip())
         except ValueError:
-            print("\n❌ ID inválido")
+            self._data_formatter.mostrar_error("ID inválido")
             return
 
         tiene_pdf = input("Tiene PDF de Cédula? (s/n): ").strip().lower() == 's'
@@ -299,9 +235,9 @@ class AplicacionConsola:
         resultado = inscribir_estudiante(id_est, id_cur, tiene_pdf, tiene_pago)
 
         if resultado["exito"]:
-            print(f"\n✅ {resultado['mensaje']}")
+            self._data_formatter.mostrar_exito(resultado['mensaje'])
         else:
-            print(f"\n❌ {resultado['error']}")
+            self._data_formatter.mostrar_error(resultado['error'])
             if "detalles" in resultado:
                 for error in resultado["detalles"]:
                     print(f"   - {error}")
@@ -310,8 +246,8 @@ class AplicacionConsola:
         print("\n🔍 VALIDAR REQUISITOS DE INSCRIPCIÓN")
         cedula = input("Cédula del Estudiante: ").strip()
 
-        if not validar_cedula_ecuador(cedula):
-            print("\n❌ Cédula inválida")
+        if not validar_cedula_input(cedula):
+            self._data_formatter.mostrar_error("Cédula inválida")
             return
 
         tiene_pdf = input("Tiene PDF de Cédula? (s/n): ").strip().lower() == 's'
@@ -332,9 +268,7 @@ class AplicacionConsola:
     # -------------------------------------------------------------------------
     def menu_certificados(self):
         """Menú de certificados"""
-        menu = MenuConsola()
-        menu.titulo = "CERTIFICACIONES"
-        menu.agregar_opcion("1", "Generar Certificado", self._generar_certificado)
+        menu = MenuBuilder.build_certificates_menu(self)
 
         while True:
             menu.mostrar()
@@ -343,31 +277,6 @@ class AplicacionConsola:
                 break
             menu.ejecutar(opcion)
 
-    def _generar_certulario(self):
-        print("\n📜 GENERAR CERTIFICADO")
-
-        try:
-            id_ins = int(input("ID de Inscripción: ").strip())
-            calif = float(input("Calificación (0-100): ").strip())
-        except ValueError:
-            print("\n❌ Valores inválidos")
-            return
-
-        if calif < 0 or calif > 100:
-            print("\n❌ La calificación debe estar entre 0 y 100")
-            return
-
-        resultado = generar_certificado(id_ins, calif)
-
-        if resultado["exito"]:
-            print(f"\n✅ {resultado['mensaje']}")
-            print(f"\n   Certificado: {resultado['numero_certificado']}")
-            print(f"   Estado: {resultado['estado']}")
-            if resultado['aval_ministerio']:
-                print(f"   Aval: {resultado['aval_ministerio']}")
-        else:
-            print(f"\n❌ {resultado['error']}")
-
     def _generar_certificado(self):
         print("\n📜 GENERAR CERTIFICADO")
 
@@ -375,33 +284,27 @@ class AplicacionConsola:
             id_ins = int(input("ID de Inscripción: ").strip())
             calif = float(input("Calificación (0-100): ").strip())
         except ValueError:
-            print("\n❌ Valores inválidos")
+            self._data_formatter.mostrar_error("Valores inválidos")
             return
 
         if calif < 0 or calif > 100:
-            print("\n❌ La calificación debe estar entre 0 y 100")
+            self._data_formatter.mostrar_error("La calificación debe estar entre 0 y 100")
             return
 
         resultado = generar_certificado(id_ins, calif)
 
         if resultado["exito"]:
-            print(f"\n✅ {resultado['mensaje']}")
-            print(f"\n   Certificado: {resultado['numero_certificado']}")
-            print(f"   Estado: {resultado['estado']}")
-            if resultado['aval_ministerio']:
-                print(f"   Aval: {resultado['aval_ministerio']}")
+            self._data_formatter.mostrar_exito(resultado['mensaje'])
+            self._data_formatter.formatear_certificado(resultado)
         else:
-            print(f"\n❌ {resultado['error']}")
+            self._data_formatter.mostrar_error(resultado['error'])
 
     # -------------------------------------------------------------------------
     # MENÚ REPORTES
     # -------------------------------------------------------------------------
     def menu_reportes(self):
         """Menú de reportes"""
-        menu = MenuConsola()
-        menu.titulo = "REPORTES"
-        menu.agregar_opcion("1", "Ver Notificaciones (30 min antes)", self._reporte_notificaciones)
-        menu.agregar_opcion("2", "Estadísticas del Sistema", self._reporte_estadisticas)
+        menu = MenuBuilder.build_reports_menu(self)
 
         while True:
             menu.mostrar()
